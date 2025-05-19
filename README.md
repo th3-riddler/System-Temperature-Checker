@@ -21,5 +21,5 @@ cargo build --release
 ```
 > You can even `strip` the binary to reduce its size:
 > ```bash
-> strip target/release/{BinaryName}
+> strip target/release/<BinaryName>
 > ```
