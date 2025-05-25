@@ -10,7 +10,7 @@ use std::time::Duration;
 fn command_matches() -> clap::ArgMatches {
     command!()
         .name("Temperature Checker")
-        .version("1.0")
+        .version("1.0.1")
         .about("A useful Rust script to keep an eye on device's temperatures. It includes information about the CPU, each CORE and the GPU.")
         .arg(
             Arg::new("time")
@@ -18,7 +18,17 @@ fn command_matches() -> clap::ArgMatches {
                 .long("time")
                 .value_name("TIME")
                 .help("Sets the time interval for checking temperature")
+                .required(false)
                 .default_value("1"),
+        )
+        .arg(
+            Arg::new("delta-times")
+                .short('d')
+                .long("delta-times")
+                .value_name("DELTA")
+                .help("See the difference between the current fetch and the previous one [the lower the better]")
+                .required(false)
+                .num_args(0),
         )
         .get_matches()
 }
@@ -92,15 +102,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(1);
     }
 
-    println!("Fetching temperatures, please wait...");    
+    let delta: bool =
+        matches.value_source("delta-times") == Some(clap::parser::ValueSource::CommandLine);
+
+    println!("Fetching temperatures, please wait...");
     let mut map: IndexMap<String, f64> = IndexMap::new();
+    let mut prev_map: IndexMap<String, f64> = IndexMap::new();
     loop {
         map.clear();
         print!("\x1B[2J\x1B[H");
-        print!("Fetching temperatures every {}s... ({})", interval, chrono::Local::now().format("%a %b %d %Y %H:%M:%S"));
+        print!(
+            "Fetching temperatures every {}s... ({})",
+            interval,
+            chrono::Local::now().format("%a %b %d %Y %H:%M:%S")
+        );
 
         get_temps(&mut map)?;
-        
+
         let mut output = String::from("\nPress Ctrl+C to exit");
         for (key, value) in map.iter() {
             let temp = if *value < 50.0 {
@@ -110,7 +128,27 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 format!("{:.1}", value).red()
             };
-            output.push_str(&format!("\n{}\t>>>\t{}", key, temp));
+
+            let t_stdout = if delta && !prev_map.is_empty() {
+                let tmp: f64 = *value - prev_map.get(key).unwrap();
+                let delta_fmt: ColoredString = if tmp < 0.0 {
+                    format!("({:+.1})", tmp).green()
+                } else if tmp == 0.0 {
+                    format!("({:+.1})", tmp).black()
+                } else if tmp > 0.0 && tmp < 5.0 {
+                    format!("({:+.1})", tmp).yellow()
+                } else {
+                    format!("({:+.1})", tmp).red()
+                };
+                format!("\n{}\t>>>\t{} {}", key, temp, delta_fmt)
+            } else {
+                format!("\n{}\t>>>\t{}", key, temp)
+            };
+
+            output.push_str(&t_stdout);
+        }
+        if delta {
+            prev_map = map.clone();
         }
         println!("{}", output);
         sleep(Duration::from_secs_f64(interval));
